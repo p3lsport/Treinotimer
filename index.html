@@ -57,8 +57,8 @@
   #time{font-weight:900;font-variant-numeric:tabular-nums;line-height:1;font-size:min(16vw,50vh);letter-spacing:-.02em;text-shadow:0 4px 16px rgba(0,0,0,.25);white-space:nowrap}
   #time .cs{font-size:.5em;font-weight:800;opacity:.85;letter-spacing:0}
   #time.short{font-size:min(28vw,72vh)}
-  #bar{width:80%;height:8px;background:rgba(0,0,0,.25);border-radius:4px;overflow:hidden;margin-top:1.5vh}
-  #bar i{display:block;height:100%;width:0;background:#fff;opacity:.9}
+  #bar{position:absolute;top:0;left:0;right:0;height:14px;background:rgba(0,0,0,.25);overflow:hidden;z-index:5}
+  #bar i{display:block;height:100%;width:0;background:#fff;opacity:.95}
   #run .side2{width:clamp(150px,22vw,210px);display:flex;flex-direction:column;gap:8px;justify-content:center}
   .cnt{background:rgba(0,0,0,.25);border-radius:16px;padding:8px 10px;text-align:center}
   .cnt span{display:block;font-size:12px;opacity:.85;text-transform:uppercase;letter-spacing:.06em}
@@ -262,6 +262,48 @@ function speak(txt, fast){
 }
 if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = ()=>{};
 
+/* ======================= Segundo plano =======================
+   Toca um áudio inaudível em loop e registra uma sessão de mídia: o Android passa a tratar
+   o app como "tocando mídia", mantém o cronômetro vivo com a tela apagada ou em outro app
+   e mostra os controles na notificação. */
+let keep = null;
+function silentWavUrl(){
+  const rate = 8000, n = rate, buf = new ArrayBuffer(44 + n*2), v = new DataView(buf);
+  const w = (o,t) => [...t].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF'); v.setUint32(4,36+n*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true);
+  v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,rate,true); v.setUint32(28,rate*2,true);
+  v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++) v.setInt16(44+i*2, Math.round(Math.sin(i/rate*2*Math.PI*40)*3), true); // ~ -80 dB
+  return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+}
+function bgAudio(on){
+  try{
+    if(on){
+      if(!keep){ keep = new Audio(silentWavUrl()); keep.loop = true; }
+      keep.play().catch(()=>{});
+    } else if(keep){ keep.pause(); }
+    if('mediaSession' in navigator) navigator.mediaSession.playbackState = on ? 'playing' : 'paused';
+  }catch(e){}
+}
+function setMedia(title){
+  try{
+    if(!('mediaSession' in navigator)) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title, artist:'Cronômetro de treino',
+      artwork:[{src:'icon-512.png', sizes:'512x512', type:'image/png'}]
+    });
+  }catch(e){}
+}
+function initMediaSession(){
+  if(!('mediaSession' in navigator)) return;
+  const set = (a,f) => { try{ navigator.mediaSession.setActionHandler(a,f); }catch(e){} };
+  set('play',  () => resumeWorkout());
+  set('pause', () => pauseWorkout());
+  set('nexttrack',     () => $('next').click());
+  set('previoustrack', () => $('prev').click());
+  set('stop',  () => stopWorkout());
+}
+
 /* ======================= Tela ligada ======================= */
 let wl = null;
 async function keepAwake(on){
@@ -270,7 +312,9 @@ async function keepAwake(on){
     else if(wl){ await wl.release(); wl = null; }
   }catch(e){}
 }
-document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible' && running) keepAwake(true); });
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState==='visible' && running){ keepAwake(true); try{ if(ac && ac.state!=='running') ac.resume(); }catch(e){} }
+});
 
 /* ======================= Motor do treino ======================= */
 let plan = [], idx = 0, endAt = 0, remMs = 0, running = false, finished = false, lastSec = null, timer = null;
@@ -281,7 +325,8 @@ function show(el){ [setup,run].forEach(s => s.classList.toggle('on', s===el)); }
 function goFull(on){
   try{
     const d = document;
-    if(on && !d.fullscreenElement && d.documentElement.requestFullscreen){
+    const installed = matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches;
+    if(on && !installed && !d.fullscreenElement && d.documentElement.requestFullscreen){
       d.documentElement.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
       if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
     } else if(!on && d.fullscreenElement && d.exitFullscreen){ d.exitFullscreen().catch(()=>{}); }
@@ -290,7 +335,7 @@ function goFull(on){
 function startWorkout(){
   initAudio();
   plan = buildPlan(); idx = 0; finished = false;
-  show(run); keepAwake(true); goFull(true);
+  show(run); keepAwake(true); goFull(true); bgAudio(true); initMediaSession();
   running = true;
   enterStage(performance.now());
   clearInterval(timer); timer = setInterval(tick, 30);
@@ -316,6 +361,7 @@ function enterStage(startMs){
     say += `. Próximo, ciclo ${st.cycle} de ${cfg.cycles}`;
   }
   speak(say);
+  setMedia(NAMES[st.type] + (st.type==='work' ? ` · Série ${st.set}/${cfg.sets}` : '') + (cfg.cycles>1 ? ` · Ciclo ${st.cycle}/${cfg.cycles}` : ''));
   if(navigator.vibrate) try{ navigator.vibrate(st.type==='work'?[200,80,200]:150); }catch(e){}
   render(st.dur*1000, st.dur);
 }
@@ -348,7 +394,7 @@ function render(remainingMs, dur){
   $('bar').firstElementChild.style.width = (100 * (1 - Math.max(0,remainingMs)/(dur*1000))) + '%';
 }
 function finish(){
-  finished = true; running = false; clearInterval(timer); keepAwake(false);
+  finished = true; running = false; clearInterval(timer); keepAwake(false); bgAudio(false);
   run.style.setProperty('--stage', COLORS.done);
   $('stageName').textContent = 'Treino concluído';
   $('time').textContent = '✓'; $('time').classList.add('short');
@@ -360,18 +406,28 @@ function finish(){
 
 $('start').onclick = startWorkout;
 
+function pauseWorkout(){
+  if(!running || finished) return;
+  running = false; remMs = endAt - performance.now();
+  run.classList.add('paused'); $('pause').textContent = '▶ Continuar';
+  try{ speechSynthesis.cancel(); }catch(e){}
+  bgAudio(false);
+}
+function resumeWorkout(){
+  if(running || finished) return;
+  initAudio(); running = true; endAt = performance.now() + remMs;
+  run.classList.remove('paused'); $('pause').textContent = '⏸ Pausar';
+  keepAwake(true); bgAudio(true);
+}
 $('pause').onclick = () => {
   if(finished){ show(setup); goFull(false); return; }
-  if(running){
-    running = false; remMs = endAt - performance.now();
-    run.classList.add('paused'); $('pause').textContent = '▶ Continuar';
-    try{ speechSynthesis.cancel(); }catch(e){}
-  } else {
-    initAudio(); running = true; endAt = performance.now() + remMs;
-    run.classList.remove('paused'); $('pause').textContent = '⏸ Pausar';
-    keepAwake(true);
-  }
+  running ? pauseWorkout() : resumeWorkout();
 };
+function stopWorkout(){
+  running = false; finished = false; clearInterval(timer); keepAwake(false); bgAudio(false);
+  try{ speechSynthesis.cancel(); }catch(e){}
+  show(setup); goFull(false);
+}
 function goStage(i){
   if(finished) return;
   idx = Math.min(plan.length-1, Math.max(0, i));
@@ -394,9 +450,7 @@ $('stop').onclick = e => {
     return;
   }
   clearTimeout(stopTimer); b.classList.remove('confirm'); b.textContent='✕';
-  running = false; finished = false; clearInterval(timer); keepAwake(false);
-  try{ speechSynthesis.cancel(); }catch(e){}
-  show(setup); goFull(false);
+  stopWorkout();
 };
 
 /* ======================= Init ======================= */
