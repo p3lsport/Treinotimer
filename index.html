@@ -277,12 +277,16 @@ function enterStage(startMs){
   $('cycTxt').innerHTML = `${st.cycle}<em>/${cfg.cycles}</em>`;
   // sinal sonoro + voz
   playCue(st.type==='work' ? (cfg.sound==='off'?'off':cfg.sound) : (cfg.sound==='off'?'off':(cfg.sound==='gong'?'bell':cfg.sound)));
+  // o nome da etapa vem sempre primeiro; depois série/ciclo
   let say = NAMES[st.type];
   if(st.type==='work'){
-    say = `Exercício. Série ${st.set} de ${cfg.sets}`;
-    if(st.set===1 && cfg.cycles>1) say = `Ciclo ${st.cycle} de ${cfg.cycles}. ` + say;
+    say += `. Série ${st.set} de ${cfg.sets}`;
+    if(st.set===1 && cfg.cycles>1) say += `. Ciclo ${st.cycle} de ${cfg.cycles}`;
+  } else if(st.type==='rest'){
+    say += `. Próxima, série ${st.set} de ${cfg.sets}`;
+  } else if(st.type==='cycleRest'){
+    say += `. Próximo, ciclo ${st.cycle} de ${cfg.cycles}`;
   }
-  if(st.type==='cycleRest') say = `Fim do ciclo. Descanso`;
   speak(say);
   if(navigator.vibrate) try{ navigator.vibrate(st.type==='work'?[200,80,200]:150); }catch(e){}
   render(st.dur*1000, st.dur);
