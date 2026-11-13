@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0f1115">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Cronômetro de Treino</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#1a1d24; --panel2:#242833; --txt:#f2f4f8; --mut:#8b93a5;
+    --work:#e8453c; --rest:#2f7de1; --prep:#e0a21a; --cyc:#8a5cf0; --done:#22a560;
+    --stage:var(--prep);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;touch-action:manipulation}
+  button{font:inherit;color:inherit;border:0;cursor:pointer}
+  .screen{position:fixed;inset:0;display:none;padding:max(10px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+  .screen.on{display:flex}
+
+  /* ---------- Configuração ---------- */
+  #setup{flex-direction:column;gap:10px}
+  #setup h1{margin:0;font-size:15px;font-weight:600;color:var(--mut);letter-spacing:.08em;text-transform:uppercase}
+  .setup-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:12px}
+  .steppers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,1fr);gap:10px;min-height:0}
+  .st{background:var(--panel);border-radius:16px;padding:8px 8px 10px;display:flex;flex-direction:column;justify-content:space-between;min-height:0}
+  .st label{font-size:13px;color:var(--mut);text-align:center;line-height:1.15}
+  .st .row{display:flex;align-items:center;justify-content:space-between;gap:6px}
+  .st .val{flex:1;min-width:0;text-align:center;font-size:clamp(22px,7.5vh,36px);font-weight:800;font-variant-numeric:tabular-nums}
+  .st .val small{font-size:.4em;font-weight:600;color:var(--mut);margin-left:2px}
+  .st button{width:clamp(36px,13vh,52px);height:clamp(36px,13vh,52px);border-radius:12px;background:var(--panel2);font-size:26px;font-weight:700;flex:none}
+  .st button:active{background:#343a49}
+  .side{display:flex;flex-direction:column;gap:8px;min-height:0}
+  .info{background:var(--panel);border-radius:16px;padding:8px 10px;font-size:13px;color:var(--mut);line-height:1.35}
+  .info b{color:var(--txt);font-size:20px;display:block;font-variant-numeric:tabular-nums}
+  .opt{background:var(--panel);border-radius:14px;padding:6px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
+  .opt select{background:var(--panel2);color:var(--txt);border:0;border-radius:8px;padding:6px 6px;font:inherit;font-size:14px}
+  .sw{position:relative;width:46px;height:26px;flex:none}
+  .sw input{opacity:0;position:absolute;inset:0;margin:0;width:100%;height:100%;cursor:pointer;z-index:2}
+  .sw i{position:absolute;inset:0;background:var(--panel2);border-radius:13px;transition:.15s}
+  .sw i::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s}
+  .sw input:checked + i{background:var(--done)}
+  .sw input:checked + i::after{transform:translateX(20px)}
+  #start{margin-top:auto;background:var(--done);border-radius:16px;font-size:22px;font-weight:800;padding:12px;min-height:56px}
+  #start:active{filter:brightness(.9)}
+
+  /* ---------- Treino ---------- */
+  #run{flex-direction:row;gap:14px;background:var(--stage);transition:background .25s}
+  #run .main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  #stageName{font-size:clamp(22px,9vh,54px);font-weight:800;letter-spacing:.06em;text-transform:uppercase;text-shadow:0 2px 8px rgba(0,0,0,.25)}
+  #time{font-weight:900;font-variant-numeric:tabular-nums;line-height:1;font-size:min(21vw,56vh);letter-spacing:-.02em;text-shadow:0 4px 16px rgba(0,0,0,.25)}
+  #time.short{font-size:min(36vw,76vh)}
+  #bar{width:80%;height:8px;background:rgba(0,0,0,.25);border-radius:4px;overflow:hidden;margin-top:1.5vh}
+  #bar i{display:block;height:100%;width:0;background:#fff;opacity:.9}
+  #run .side2{width:clamp(150px,22vw,210px);display:flex;flex-direction:column;gap:8px;justify-content:center}
+  .cnt{background:rgba(0,0,0,.25);border-radius:16px;padding:8px 10px;text-align:center}
+  .cnt span{display:block;font-size:12px;opacity:.85;text-transform:uppercase;letter-spacing:.06em}
+  .cnt b{font-size:clamp(26px,9vh,44px);font-weight:800;font-variant-numeric:tabular-nums}
+  .cnt em{font-style:normal;font-size:.55em;opacity:.8}
+  .ctl{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+  .ctl button{background:rgba(0,0,0,.3);border-radius:14px;height:clamp(44px,15vh,60px);font-size:22px}
+  .ctl button:active{background:rgba(0,0,0,.5)}
+  #pause{grid-column:1/4;background:#fff;color:#111;font-weight:800;font-size:18px}
+  #pause:active{background:#ddd}
+  #stop.confirm{background:#000;font-size:13px}
+  #run.paused #time{animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.35}}
+
+  /* Retrato: empilha */
+  @media (orientation:portrait){
+    .setup-body{grid-template-columns:1fr;grid-template-rows:1fr auto}
+    .steppers{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(3,1fr)}
+    #run{flex-direction:column}
+    #time{font-size:min(30vw,26vh)}
+    #time.short{font-size:min(60vw,36vh)}
+    #run .side2{width:auto;flex-direction:row;flex-wrap:wrap}
+    .cnt{flex:1}
+    .ctl{width:100%}
+  }
+  #hint{display:none;position:fixed;left:0;right:0;bottom:0;background:#000b;text-align:center;font-size:13px;padding:6px}
+  @media (orientation:portrait){#hint{display:block}}
+</style>
+</head>
+<body>
+
+<!-- CONFIGURAÇÃO -->
+<section id="setup" class="screen on">
+  <h1>Cronômetro de treino</h1>
+  <div class="setup-body">
+    <div class="steppers" id="steppers"></div>
+    <div class="side">
+      <div class="info">Duração total<b id="total">0:00</b><span id="totalSub"></span></div>
+      <div class="opt"><span>Som</span>
+        <select id="sound">
+          <option value="beep">Bipe</option>
+          <option value="bell">Sino</option>
+          <option value="gong">Gongo</option>
+          <option value="off">Desligado</option>
+        </select>
+      </div>
+      <div class="opt"><span>Voz (pt-BR)</span><label class="sw"><input type="checkbox" id="voice"><i></i></label></div>
+      <button id="start">▶ Iniciar</button>
+    </div>
+  </div>
+</section>
+
+<!-- TREINO -->
+<section id="run" class="screen">
+  <div class="main">
+    <div id="stageName">—</div>
+    <div id="time">0</div>
+    <div id="bar"><i></i></div>
+  </div>
+  <div class="side2">
+    <div class="cnt"><span>Série</span><b id="setTxt">1<em>/4</em></b></div>
+    <div class="cnt"><span>Ciclo</span><b id="cycTxt">1<em>/3</em></b></div>
+    <div class="ctl">
+      <button id="pause">⏸ Pausar</button>
+      <button id="prev" aria-label="Etapa anterior">⏮</button>
+      <button id="next" aria-label="Próxima etapa">⏭</button>
+      <button id="stop" aria-label="Parar">✕</button>
+    </div>
+  </div>
+</section>
+<div id="hint">Gire o celular para a horizontal 🔄</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ======================= Configurações ======================= */
+const DEFAULTS = {prep:10, work:40, rest:20, sets:4, cycles:3, cycleRest:60, sound:'bell', voice:true};
+const FIELDS = [
+  {k:'work',      label:'Tempo sob exercício', time:true, step:5, min:5,  max:3600},
+  {k:'rest',      label:'Intervalo entre séries', time:true, step:5, min:0, max:3600},
+  {k:'sets',      label:'Séries por ciclo',    time:false, step:1, min:1, max:99},
+  {k:'cycles',    label:'Ciclos de séries',    time:false, step:1, min:1, max:99},
+  {k:'cycleRest', label:'Descanso entre ciclos', time:true, step:5, min:0, max:3600},
+  {k:'prep',      label:'Preparação inicial',  time:true, step:5, min:0, max:300},
+];
+let cfg = {...DEFAULTS};
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('treino.cfg')||'{}')); } catch(e){}
+const save = () => { try{ localStorage.setItem('treino.cfg', JSON.stringify(cfg)); }catch(e){} };
+
+const $ = id => document.getElementById(id);
+const fmt = s => { s=Math.max(0,Math.round(s)); const m=Math.floor(s/60), r=s%60; return m+':'+String(r).padStart(2,'0'); };
+
+/* ======================= Tela de configuração ======================= */
+const stepWrap = $('steppers'), valEls = {};
+FIELDS.forEach(f => {
+  const d = document.createElement('div'); d.className='st';
+  d.innerHTML = `<label>${f.label}</label><div class="row"><button data-d="-1" aria-label="menos">−</button><div class="val"></div><button data-d="1" aria-label="mais">+</button></div>`;
+  valEls[f.k] = d.querySelector('.val');
+  d.querySelectorAll('button').forEach(b => attachRepeat(b, () => {
+    const v = cfg[f.k] + (+b.dataset.d)*f.step;
+    cfg[f.k] = Math.min(f.max, Math.max(f.min, v)); refresh();
+  }));
+  stepWrap.appendChild(d);
+});
+// segurar o botão repete
+function attachRepeat(btn, fn){
+  let t1, t2;
+  const stop = () => { clearTimeout(t1); clearInterval(t2); };
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); fn(); t1 = setTimeout(()=>{ t2 = setInterval(fn, 90); }, 450); });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+}
+function refresh(){
+  FIELDS.forEach(f => {
+    const v = cfg[f.k];
+    valEls[f.k].innerHTML = f.time ? (v===0 ? '—' : fmt(v)) : v;
+  });
+  $('sound').value = cfg.sound; $('voice').checked = cfg.voice;
+  const plan = buildPlan();
+  $('total').textContent = fmt(plan.reduce((a,s)=>a+s.dur,0));
+  $('totalSub').textContent = `${cfg.cycles} ciclo${cfg.cycles>1?'s':''} × ${cfg.sets} série${cfg.sets>1?'s':''}`;
+  save();
+}
+$('sound').onchange = e => { cfg.sound = e.target.value; refresh(); if(cfg.sound!=='off'){ initAudio(); playCue(cfg.sound); } };
+$('voice').onchange = e => { cfg.voice = e.target.checked; refresh(); if(cfg.voice){ initAudio(); speak('Voz ativada'); } };
+
+/* ======================= Plano do treino ======================= */
+function buildPlan(){
+  const p = [];
+  if (cfg.prep>0) p.push({type:'prep', dur:cfg.prep, set:1, cycle:1});
+  for (let c=1;c<=cfg.cycles;c++){
+    for (let s=1;s<=cfg.sets;s++){
+      p.push({type:'work', dur:cfg.work, set:s, cycle:c});
+      const lastSet = s===cfg.sets, lastCycle = c===cfg.cycles;
+      if (!lastSet && cfg.rest>0) p.push({type:'rest', dur:cfg.rest, set:s+1, cycle:c});
+      if (lastSet && !lastCycle && cfg.cycleRest>0) p.push({type:'cycleRest', dur:cfg.cycleRest, set:1, cycle:c+1});
+    }
+  }
+  return p;
+}
+const NAMES = {prep:'Prepare-se', work:'Exercício', rest:'Descanso', cycleRest:'Descanso de ciclo'};
+const COLORS = {prep:'var(--prep)', work:'var(--work)', rest:'var(--rest)', cycleRest:'var(--cyc)', done:'var(--done)'};
+
+/* ======================= Áudio ======================= */
+let ac = null;
+function initAudio(){
+  try{
+    if(!ac) ac = new (window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended') ac.resume();
+  }catch(e){}
+  try{ if('speechSynthesis' in window && !initAudio.warm){ initAudio.warm=true; const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u);} }catch(e){}
+}
+function tone(freq, t0, dur, type='sine', gain=.4, attack=.005){
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0+attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0+dur+.05);
+}
+function playCue(kind){
+  if(!ac || kind==='off') return;
+  const t = ac.currentTime + .01;
+  if(kind==='tick'){ tone(880, t, .12, 'square', .18); }
+  else if(kind==='beep'){ tone(1000, t, .18, 'square', .22); tone(1000, t+.26, .18, 'square', .22); }
+  else if(kind==='bell'){ // parciais de sino
+    [[880,.45,2.0],[1760,.2,1.4],[2640,.12,1.0],[3520,.07,.7]].forEach(([f,g,d]) => tone(f, t, d, 'sine', g));
+  }
+  else if(kind==='gong'){ // gongo grave com parciais inarmônicos
+    [[110,.5,3.4],[164,.3,3.0],[233,.25,2.6],[311,.18,2.2],[470,.1,1.6]].forEach(([f,g,d]) => tone(f, t, d, 'sine', g, .015));
+  }
+}
+const NUM = {3:'três', 2:'dois', 1:'um'};
+function speak(txt){
+  if(!cfg.voice || !('speechSynthesis' in window)) return;
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(txt); u.lang='pt-BR'; u.rate=1.05;
+    const v = speechSynthesis.getVoices().find(v => /^pt[-_]BR/i.test(v.lang)) || speechSynthesis.getVoices().find(v=>/^pt/i.test(v.lang));
+    if(v) u.voice = v;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = ()=>{};
+
+/* ======================= Tela ligada ======================= */
+let wl = null;
+async function keepAwake(on){
+  try{
+    if(on && 'wakeLock' in navigator){ wl = await navigator.wakeLock.request('screen'); }
+    else if(wl){ await wl.release(); wl = null; }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible' && running) keepAwake(true); });
+
+/* ======================= Motor do treino ======================= */
+let plan = [], idx = 0, endAt = 0, remMs = 0, running = false, finished = false, lastSec = null, timer = null;
+const run = $('run'), setup = $('setup');
+
+function show(el){ [setup,run].forEach(s => s.classList.toggle('on', s===el)); }
+
+function startWorkout(){
+  initAudio();
+  plan = buildPlan(); idx = 0; finished = false;
+  show(run); keepAwake(true);
+  running = true;
+  enterStage(performance.now());
+  clearInterval(timer); timer = setInterval(tick, 100);
+}
+function enterStage(startMs){
+  const st = plan[idx];
+  endAt = startMs + st.dur*1000; remMs = st.dur*1000; lastSec = null;
+  run.classList.remove('paused'); $('pause').textContent = '⏸ Pausar';
+  run.style.setProperty('--stage', COLORS[st.type]);
+  $('stageName').textContent = NAMES[st.type];
+  $('setTxt').innerHTML = `${st.set}<em>/${cfg.sets}</em>`;
+  $('cycTxt').innerHTML = `${st.cycle}<em>/${cfg.cycles}</em>`;
+  // sinal sonoro + voz
+  playCue(st.type==='work' ? (cfg.sound==='off'?'off':cfg.sound) : (cfg.sound==='off'?'off':(cfg.sound==='gong'?'bell':cfg.sound)));
+  let say = NAMES[st.type];
+  if(st.type==='work'){
+    say = `Exercício. Série ${st.set} de ${cfg.sets}`;
+    if(st.set===1 && cfg.cycles>1) say = `Ciclo ${st.cycle} de ${cfg.cycles}. ` + say;
+  }
+  if(st.type==='cycleRest') say = `Fim do ciclo. Descanso`;
+  speak(say);
+  if(navigator.vibrate) try{ navigator.vibrate(st.type==='work'?[200,80,200]:150); }catch(e){}
+  render(st.dur*1000, st.dur);
+}
+function tick(){
+  if(!running) return;
+  const now = performance.now();
+  let rem = endAt - now;
+  // avança etapas (loop caso a aba tenha ficado em segundo plano)
+  while(rem <= 0 && !finished){
+    if(idx >= plan.length-1){ return finish(); }
+    idx++; enterStage(endAt); rem = endAt - now;
+  }
+  render(rem, plan[idx].dur);
+  const sec = Math.ceil(rem/1000);
+  if(sec !== lastSec){
+    lastSec = sec;
+    if(sec<=3 && sec>=1 && plan[idx].dur>3){
+      playCue(cfg.sound==='off' ? 'off' : 'tick');
+      speak(NUM[sec]);
+      if(navigator.vibrate) try{ navigator.vibrate(40); }catch(e){}
+    }
+  }
+}
+function render(remainingMs, dur){
+  const sec = Math.max(0, Math.ceil(remainingMs/1000));
+  const t = $('time');
+  t.textContent = sec>=60 ? fmt(sec) : String(sec);
+  t.classList.toggle('short', sec<60);
+  $('bar').firstElementChild.style.width = (100 * (1 - Math.max(0,remainingMs)/(dur*1000))) + '%';
+}
+function finish(){
+  finished = true; running = false; clearInterval(timer); keepAwake(false);
+  run.style.setProperty('--stage', COLORS.done);
+  $('stageName').textContent = 'Treino concluído';
+  $('time').textContent = '✓'; $('time').classList.add('short');
+  $('bar').firstElementChild.style.width = '100%';
+  $('pause').textContent = '↩ Voltar';
+  playCue(cfg.sound==='off'?'off':'gong'); speak('Treino concluído. Bom trabalho!');
+  if(navigator.vibrate) try{ navigator.vibrate([300,100,300,100,600]); }catch(e){}
+}
+
+$('start').onclick = startWorkout;
+
+$('pause').onclick = () => {
+  if(finished){ show(setup); return; }
+  if(running){
+    running = false; remMs = endAt - performance.now();
+    run.classList.add('paused'); $('pause').textContent = '▶ Continuar';
+    try{ speechSynthesis.cancel(); }catch(e){}
+  } else {
+    initAudio(); running = true; endAt = performance.now() + remMs;
+    run.classList.remove('paused'); $('pause').textContent = '⏸ Pausar';
+    keepAwake(true);
+  }
+};
+function goStage(i){
+  if(finished) return;
+  idx = Math.min(plan.length-1, Math.max(0, i));
+  const wasPaused = !running;
+  enterStage(performance.now());
+  if(wasPaused){ running = false; remMs = plan[idx].dur*1000; run.classList.add('paused'); $('pause').textContent='▶ Continuar'; }
+}
+$('next').onclick = () => { if(idx >= plan.length-1) finish(); else goStage(idx+1); };
+$('prev').onclick = () => {
+  // se já passou >2s da etapa, reinicia a atual; senão volta uma
+  const elapsed = plan[idx].dur*1000 - (running ? endAt-performance.now() : remMs);
+  goStage(elapsed > 2000 ? idx : idx-1);
+};
+let stopTimer;
+$('stop').onclick = e => {
+  const b = e.currentTarget;
+  if(!b.classList.contains('confirm')){
+    b.classList.add('confirm'); b.textContent = 'Sair?';
+    stopTimer = setTimeout(()=>{ b.classList.remove('confirm'); b.textContent='✕'; }, 2500);
+    return;
+  }
+  clearTimeout(stopTimer); b.classList.remove('confirm'); b.textContent='✕';
+  running = false; finished = false; clearInterval(timer); keepAwake(false);
+  try{ speechSynthesis.cancel(); }catch(e){}
+  show(setup);
+};
+
+/* ======================= Init ======================= */
+refresh();
+if('serviceWorker' in navigator){ window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+
+// hooks para testes
+window.__t = {get plan(){return buildPlan();}, get cfg(){return cfg;}};
+})();
+</script>
+</body>
+</html>
