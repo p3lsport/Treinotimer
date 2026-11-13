@@ -54,8 +54,9 @@
   #run{flex-direction:row;gap:14px;background:var(--stage);transition:background .25s}
   #run .main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
   #stageName{font-size:clamp(22px,9vh,54px);font-weight:800;letter-spacing:.06em;text-transform:uppercase;text-shadow:0 2px 8px rgba(0,0,0,.25)}
-  #time{font-weight:900;font-variant-numeric:tabular-nums;line-height:1;font-size:min(21vw,56vh);letter-spacing:-.02em;text-shadow:0 4px 16px rgba(0,0,0,.25)}
-  #time.short{font-size:min(36vw,76vh)}
+  #time{font-weight:900;font-variant-numeric:tabular-nums;line-height:1;font-size:min(16vw,50vh);letter-spacing:-.02em;text-shadow:0 4px 16px rgba(0,0,0,.25);white-space:nowrap}
+  #time .cs{font-size:.5em;font-weight:800;opacity:.85;letter-spacing:0}
+  #time.short{font-size:min(28vw,72vh)}
   #bar{width:80%;height:8px;background:rgba(0,0,0,.25);border-radius:4px;overflow:hidden;margin-top:1.5vh}
   #bar i{display:block;height:100%;width:0;background:#fff;opacity:.9}
   #run .side2{width:clamp(150px,22vw,210px);display:flex;flex-direction:column;gap:8px;justify-content:center}
@@ -77,8 +78,8 @@
     .setup-body{grid-template-columns:1fr;grid-template-rows:1fr auto}
     .steppers{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(3,1fr)}
     #run{flex-direction:column}
-    #time{font-size:min(30vw,26vh)}
-    #time.short{font-size:min(60vw,36vh)}
+    #time{font-size:min(22vw,24vh)}
+    #time.short{font-size:min(42vw,34vh)}
     #run .side2{width:auto;flex-direction:row;flex-wrap:wrap}
     .cnt{flex:1}
     .ctl{width:100%}
@@ -104,7 +105,14 @@
           <option value="off">Desligado</option>
         </select>
       </div>
-      <div class="opt"><span>Voz (pt-BR)</span><label class="sw"><input type="checkbox" id="voice"><i></i></label></div>
+      <div class="opt"><span>Voz</span>
+        <select id="voice">
+          <option value="off">Desligada</option>
+          <option value="1">Normal</option>
+          <option value="1.25">Rápida</option>
+          <option value="1.45">Muito rápida</option>
+        </select>
+      </div>
       <button id="start">▶ Iniciar</button>
     </div>
   </div>
@@ -135,7 +143,7 @@
 'use strict';
 
 /* ======================= Configurações ======================= */
-const DEFAULTS = {prep:10, work:40, rest:20, sets:4, cycles:3, cycleRest:60, sound:'bell', voice:true};
+const DEFAULTS = {prep:10, work:40, rest:20, sets:4, cycles:3, cycleRest:60, sound:'bell', voice:true, rate:1.25};
 const FIELDS = [
   {k:'work',      label:'Tempo sob exercício', time:true, step:5, min:5,  max:3600},
   {k:'rest',      label:'Intervalo entre séries', time:true, step:5, min:0, max:3600},
@@ -175,14 +183,18 @@ function refresh(){
     const v = cfg[f.k];
     valEls[f.k].innerHTML = f.time ? (v===0 ? '—' : fmt(v)) : v;
   });
-  $('sound').value = cfg.sound; $('voice').checked = cfg.voice;
+  $('sound').value = cfg.sound; $('voice').value = cfg.voice ? String(cfg.rate) : 'off';
   const plan = buildPlan();
   $('total').textContent = fmt(plan.reduce((a,s)=>a+s.dur,0));
   $('totalSub').textContent = `${cfg.cycles} ciclo${cfg.cycles>1?'s':''} × ${cfg.sets} série${cfg.sets>1?'s':''}`;
   save();
 }
 $('sound').onchange = e => { cfg.sound = e.target.value; refresh(); if(cfg.sound!=='off'){ initAudio(); playCue(cfg.sound); } };
-$('voice').onchange = e => { cfg.voice = e.target.checked; refresh(); if(cfg.voice){ initAudio(); speak('Voz ativada'); } };
+$('voice').onchange = e => {
+  const v = e.target.value;
+  cfg.voice = v!=='off'; if(cfg.voice) cfg.rate = parseFloat(v);
+  refresh(); if(cfg.voice){ initAudio(); speak('Exercício. Série 1 de 4'); }
+};
 
 /* ======================= Plano do treino ======================= */
 function buildPlan(){
@@ -231,13 +243,20 @@ function playCue(kind){
   }
 }
 const NUM = {3:'três', 2:'dois', 1:'um'};
-function speak(txt){
+function pickVoice(){
+  const vs = speechSynthesis.getVoices().filter(v => /^pt[-_]/i.test(v.lang));
+  const br = vs.filter(v => /^pt[-_]BR/i.test(v.lang));
+  const pool = br.length ? br : vs;
+  // prefere vozes de rede/neurais, em geral mais naturais e vivas
+  return pool.find(v => /natural|neural|online|google|francisca|thalita|antonio|luciana|felipe/i.test(v.name)) || pool[0];
+}
+function speak(txt, fast){
   if(!cfg.voice || !('speechSynthesis' in window)) return;
   try{
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(txt); u.lang='pt-BR'; u.rate=1.05;
-    const v = speechSynthesis.getVoices().find(v => /^pt[-_]BR/i.test(v.lang)) || speechSynthesis.getVoices().find(v=>/^pt/i.test(v.lang));
-    if(v) u.voice = v;
+    const u = new SpeechSynthesisUtterance(txt); u.lang='pt-BR';
+    u.rate = Math.min(2, (cfg.rate||1.25) * (fast?1.1:1)); u.pitch = 1.1;
+    const v = pickVoice(); if(v) u.voice = v;
     speechSynthesis.speak(u);
   }catch(e){}
 }
@@ -259,13 +278,22 @@ const run = $('run'), setup = $('setup');
 
 function show(el){ [setup,run].forEach(s => s.classList.toggle('on', s===el)); }
 
+function goFull(on){
+  try{
+    const d = document;
+    if(on && !d.fullscreenElement && d.documentElement.requestFullscreen){
+      d.documentElement.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
+      if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
+    } else if(!on && d.fullscreenElement && d.exitFullscreen){ d.exitFullscreen().catch(()=>{}); }
+  }catch(e){}
+}
 function startWorkout(){
   initAudio();
   plan = buildPlan(); idx = 0; finished = false;
-  show(run); keepAwake(true);
+  show(run); keepAwake(true); goFull(true);
   running = true;
   enterStage(performance.now());
-  clearInterval(timer); timer = setInterval(tick, 100);
+  clearInterval(timer); timer = setInterval(tick, 30);
 }
 function enterStage(startMs){
   const st = plan[idx];
@@ -306,15 +334,16 @@ function tick(){
     lastSec = sec;
     if(sec<=3 && sec>=1 && plan[idx].dur>3){
       playCue(cfg.sound==='off' ? 'off' : 'tick');
-      speak(NUM[sec]);
+      speak(NUM[sec], true);
       if(navigator.vibrate) try{ navigator.vibrate(40); }catch(e){}
     }
   }
 }
 function render(remainingMs, dur){
-  const sec = Math.max(0, Math.ceil(remainingMs/1000));
+  const cs = Math.max(0, Math.ceil(remainingMs/10));      // centésimos restantes
+  const sec = Math.floor(cs/100), c = String(cs%100).padStart(2,'0');
   const t = $('time');
-  t.textContent = sec>=60 ? fmt(sec) : String(sec);
+  t.innerHTML = (sec>=60 ? fmt(sec) : String(sec)) + '<span class="cs">.' + c + '</span>';
   t.classList.toggle('short', sec<60);
   $('bar').firstElementChild.style.width = (100 * (1 - Math.max(0,remainingMs)/(dur*1000))) + '%';
 }
@@ -332,7 +361,7 @@ function finish(){
 $('start').onclick = startWorkout;
 
 $('pause').onclick = () => {
-  if(finished){ show(setup); return; }
+  if(finished){ show(setup); goFull(false); return; }
   if(running){
     running = false; remMs = endAt - performance.now();
     run.classList.add('paused'); $('pause').textContent = '▶ Continuar';
@@ -367,7 +396,7 @@ $('stop').onclick = e => {
   clearTimeout(stopTimer); b.classList.remove('confirm'); b.textContent='✕';
   running = false; finished = false; clearInterval(timer); keepAwake(false);
   try{ speechSynthesis.cancel(); }catch(e){}
-  show(setup);
+  show(setup); goFull(false);
 };
 
 /* ======================= Init ======================= */
